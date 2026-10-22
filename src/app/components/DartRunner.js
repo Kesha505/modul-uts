@@ -61,7 +61,16 @@ export default function DartRunner({ code, autoRunKey }) {
         body: JSON.stringify({ code }),
       });
 
-      const { compiledJs, error } = await res.json();
+      let result;
+      try {
+        result = await res.json();
+      } catch {
+        setCompileError('Server mengembalikan respons tidak valid. Coba lagi.');
+        setRunning(false);
+        return;
+      }
+
+      const { compiledJs, error } = result;
 
       if (error) {
         setCompileError(error);
