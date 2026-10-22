@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import DartRunner from './DartRunner';
+
 
 /**
  * InlineEditText — click to edit any text content inline.
@@ -147,11 +149,13 @@ export function InlineEditText({ value, onSave, multiline = false, className = '
 
 /**
  * InlineEditCode — click to edit code blocks inline.
+ * After saving, auto-runs the Dart code via DartRunner.
  */
 export function InlineEditCode({ value, onSave, lang = 'DART' }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
+  const [autoRunKey, setAutoRunKey] = useState(0); // increment to trigger auto-run
   const ref = useRef(null);
 
   useEffect(() => {
@@ -169,6 +173,8 @@ export function InlineEditCode({ value, onSave, lang = 'DART' }) {
     await onSave(draft);
     setSaving(false);
     setEditing(false);
+    // Trigger auto-run after save
+    setAutoRunKey((k) => k + 1);
   }
 
   return (
@@ -274,6 +280,11 @@ export function InlineEditCode({ value, onSave, lang = 'DART' }) {
         >
           {value}
         </pre>
+      )}
+
+      {/* Dart Runner — otomatis setelah simpan, atau klik manual */}
+      {lang === 'DART' && !editing && (
+        <DartRunner code={value} autoRunKey={autoRunKey} />
       )}
     </div>
   );

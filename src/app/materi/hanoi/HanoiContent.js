@@ -143,19 +143,6 @@ export default function HanoiContent() {
               />
             </div>
 
-            {/* Output */}
-            <div className="info-box info-green" style={{ marginBottom: 24 }}>
-              <div className="info-box-icon">▶️</div>
-              <div>
-                <div className="info-box-title">Output Program (n=3)</div>
-                <div className="info-box-text" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, lineHeight: 2 }}>
-                  Pindah 1: A → C<br />Pindah 2: A → B<br />Pindah 1: C → B<br />
-                  Pindah 3: A → C<br />Pindah 1: B → A<br />Pindah 2: B → C<br />
-                  Pindah 1: A → C<br />Total: <strong>7 langkah</strong>
-                </div>
-              </div>
-            </div>
-
             <div className="page-nav">
               <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>← Halaman pertama</span>
               <Link href="/materi/palindrom" className="nav-arrow">

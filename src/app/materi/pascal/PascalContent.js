@@ -104,17 +104,6 @@ export default function PascalContent() {
               <InlineEditCode value={content.code} onSave={(v) => save('code', v)} lang="DART" />
             </div>
 
-            {/* Output */}
-            <div className="info-box info-green" style={{ marginBottom: 24 }}>
-              <div className="info-box-icon">▶️</div>
-              <div>
-                <div className="info-box-title">Output Program</div>
-                <div className="info-box-text" style={{ fontFamily:'JetBrains Mono,monospace',fontSize:12,lineHeight:2 }}>
-                  1<br/>1 1<br/>1 2 1<br/>1 3 3 1<br/>1 4 6 4 1<br/>1 5 10 10 5 1
-                </div>
-              </div>
-            </div>
-
             {/* Summary */}
             <div className="card" style={{ marginBottom: 24 }}>
               <div className="card-title"><div className="card-icon" style={{ background:'rgba(99,102,241,0.15)' }}>📊</div>Ringkasan Semua Topik</div>

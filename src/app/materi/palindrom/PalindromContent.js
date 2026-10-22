@@ -101,14 +101,6 @@ export default function PalindromContent() {
               <InlineEditCode value={content.code} onSave={(v) => save('code', v)} lang="DART" />
             </div>
 
-            <div className="info-box info-green" style={{ marginBottom: 24 }}>
-              <div className="info-box-icon">▶️</div>
-              <div>
-                <div className="info-box-title">Output Program</div>
-                <div className="info-box-text" style={{ fontFamily:'JetBrains Mono,monospace',fontSize:13,lineHeight:2 }}>bukan palindrom</div>
-              </div>
-            </div>
-
             <div className="stat-grid" style={{ marginBottom: 24 }}>
               <div className="stat-card"><div className="stat-value">O(n)</div><div className="stat-label">Kompleksitas Waktu</div></div>
               <div className="stat-card"><div className="stat-value">O(1)</div><div className="stat-label">Memori (Two Pointers)</div></div>
