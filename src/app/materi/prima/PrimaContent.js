@@ -18,10 +18,9 @@ export default function PrimaContent() {
               <h1 className="page-title">
                 Bilangan <span style={{ background:'linear-gradient(135deg,#10b981,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent' }}>Prima</span>
               </h1>
-              <p className="page-description">
+              <div className="page-description">
                 <InlineEditText value={content.description} onSave={(v) => save('description', v)} multiline />
-              </p>
-              <div className="meta-chips">
+              </div> <div className="meta-chips">
                 <span className="meta-chip">⚡ O(√n)</span>
                 <span className="meta-chip">🔍 Sieve: O(n log log n)</span>
                 <span className="meta-chip">📊 Number Theory</span>
@@ -105,3 +104,4 @@ export default function PrimaContent() {
     </div>
   );
 }
+

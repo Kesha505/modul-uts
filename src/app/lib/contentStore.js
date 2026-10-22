@@ -1,18 +1,14 @@
-import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 const COLLECTION = 'materi';
 
-/**
- * Default content for each materi — seeded to Firestore on first use
- */
 export const DEFAULT_CONTENT = {
   hanoi: {
     title: 'Menara Hanoi',
     description:
       'Rekursi klasik yang menggunakan prinsip divide & conquer dan dapat dibuktikan secara matematis dengan induksi. Pindahkan n piringan dari tiang A ke tiang C dengan bantuan tiang B.',
-    formula:
-      'T(0) = 0\nT(n) = 2·T(n−1) + 1\n\n∴ T(n) = 2ⁿ − 1',
+    formula: 'T(0) = 0\nT(n) = 2·T(n−1) + 1\n\n∴ T(n) = 2ⁿ − 1',
     proof:
       'Basis: T(1) = 1 = 2¹ − 1 ✓\nHipotesis: Misal T(k) = 2ᵏ − 1\nInduksi: T(k+1) = 2·T(k) + 1 = 2(2ᵏ−1) + 1 = 2ᵏ⁺¹ − 1 ✓',
     code: `void hanoi(int n, String a, String c, String b) {
@@ -38,7 +34,6 @@ void main() {
       'Pindahkan n−1 piringan dari B → C',
     ],
   },
-
   palindrom: {
     title: 'Palindrom',
     description:
@@ -58,7 +53,6 @@ void main() {
   }
 }`,
   },
-
   prima: {
     title: 'Bilangan Prima',
     description:
@@ -86,14 +80,12 @@ void main() {
   }
 }`,
   },
-
   pascal: {
     title: 'Segitiga Pascal',
     description:
       'Tiap angka = jumlah dua angka di atasnya, tepi selalu 1. Angka di baris ke-n, posisi ke-k adalah koefisien binomial C(n,k) = n! / (k!·(n−k)!).',
     formula: 'C(n,k) = n! / (k! · (n−k)!)\n\nRekurens: C(n,k) = C(n−1,k−1) + C(n−1,k)\nC(n,0) = C(n,n) = 1',
-    binomial:
-      '(a+b)³ = 1·a³ + 3·a²b + 3·ab² + 1·b³\n       = a³ + 3a²b + 3ab² + b³',
+    binomial: '(a+b)³ = 1·a³ + 3·a²b + 3·ab² + 1·b³\n       = a³ + 3a²b + 3ab² + b³',
     code: `void main() {
   var baris = [1];
 
@@ -117,47 +109,52 @@ void main() {
 };
 
 /**
- * Get or initialize a materi document in Firestore.
- * If the doc doesn't exist, seed it with default content.
+ * Real-time subscription menggunakan onSnapshot langsung.
+ * Jika dokumen belum ada, seed dengan default content.
+ * Callback dipanggil SETIAP ADA PERUBAHAN dari siapapun.
  */
-export async function getOrInitMateri(slug) {
+export function subscribeMateri(slug, onData, onError) {
   const ref = doc(db, COLLECTION, slug);
-  const snap = await getDoc(ref);
 
-  if (!snap.exists()) {
-    const defaultData = {
-      ...DEFAULT_CONTENT[slug],
-      updatedAt: serverTimestamp(),
-      updatedBy: 'system',
-    };
-    await setDoc(ref, defaultData);
-    return defaultData;
-  }
-
-  return snap.data();
-}
-
-/**
- * Save updated content for a materi (partial update).
- */
-export async function saveMateri(slug, updates) {
-  const ref = doc(db, COLLECTION, slug);
-  await setDoc(
+  return onSnapshot(
     ref,
-    { ...updates, updatedAt: serverTimestamp(), updatedBy: 'user' },
-    { merge: true }
+    async (snap) => {
+      if (!snap.exists()) {
+        // Pertama kali — seed default content ke Firestore
+        try {
+          await setDoc(ref, {
+            ...DEFAULT_CONTENT[slug],
+            _seeded: true,
+            _updatedAt: serverTimestamp(),
+          });
+          // onSnapshot akan otomatis trigger lagi setelah setDoc
+        } catch (e) {
+          onError?.(e);
+        }
+      } else {
+        onData(snap.data());
+      }
+    },
+    (error) => {
+      console.error('Firestore onSnapshot error:', error);
+      onError?.(error);
+    }
   );
 }
 
 /**
- * Subscribe to real-time updates for a materi.
- * Returns an unsubscribe function.
+ * Simpan field tertentu — merge agar field lain tidak hilang.
+ * Firestore otomatis push update ke SEMUA subscriber (onSnapshot) secara real-time.
  */
-export function subscribeMateri(slug, callback) {
+export async function saveField(slug, field, value) {
   const ref = doc(db, COLLECTION, slug);
-  return onSnapshot(ref, (snap) => {
-    if (snap.exists()) {
-      callback(snap.data());
-    }
-  });
+  await setDoc(
+    ref,
+    {
+      [field]: value,
+      _updatedAt: serverTimestamp(),
+      _updatedBy: 'user',
+    },
+    { merge: true }
+  );
 }

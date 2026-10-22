@@ -24,7 +24,7 @@ export default function PalindromContent() {
                   Palindrom
                 </span>
               </h1>
-              <p className="page-description">
+              <div className="page-description">
                 <InlineEditText value={content.description} onSave={(v) => save('description', v)} multiline />
               </p>
               <div className="meta-chips">
@@ -125,3 +125,4 @@ export default function PalindromContent() {
     </div>
   );
 }
+

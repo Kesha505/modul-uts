@@ -17,13 +17,13 @@ export default function HanoiContent() {
               <h1 className="page-title">
                 Menara <span className="gradient-text">Hanoi</span>
               </h1>
-              <p className="page-description">
+              <div className="page-description">
                 <InlineEditText
                   value={content.description}
                   onSave={(v) => save('description', v)}
                   multiline
                 />
-              </p>
+              </div>
               <div className="meta-chips">
                 <span className="meta-chip">⚡ Kompleksitas: O(2ⁿ)</span>
                 <span className="meta-chip">🔁 Rekursi</span>

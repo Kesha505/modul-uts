@@ -27,10 +27,9 @@ export default function PascalContent() {
               <h1 className="page-title">
                 Segitiga <span style={{ background:'linear-gradient(135deg,#f59e0b,#ef4444)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent' }}>Pascal</span>
               </h1>
-              <p className="page-description">
+              <div className="page-description">
                 <InlineEditText value={content.description} onSave={(v) => save('description', v)} multiline />
-              </p>
-              <div className="meta-chips">
+              </div> <div className="meta-chips">
                 <span className="meta-chip">🧮 C(n,k) = n!/(k!(n−k)!)</span>
                 <span className="meta-chip">📊 Kombinatorika</span>
               </div>
@@ -147,3 +146,4 @@ export default function PascalContent() {
     </div>
   );
 }
+
