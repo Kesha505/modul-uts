@@ -3,42 +3,61 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
 /**
- * DartRunner — menjalankan kode Dart secara nyata di browser.
+ * DartRunner — menjalankan kode Dart menggunakan DartPad embed.
  *
- * Flow:
- * 1. Kirim kode ke /api/run-dart (proxy ke DartPad compile API)
- * 2. DartPad mengembalikan compiled JavaScript
- * 3. Jalankan JS di sandboxed iframe
- * 4. Dart print() → dart2js menggunakan `dartPrint` hook → ditangkap
- * 5. Output dikirim ke parent via postMessage
+ * Cara kerja:
+ * 1. Buat iframe tersembunyi yang memuat DartPad embed
+ * 2. Inject kode via postMessage ke DartPad
+ * 3. Tunggu DartPad menjalankan dan emit hasil
+ * 4. Tampilkan output di bawah code block
+ *
+ * Fallback: jika DartPad tidak merespons, tampilkan link ke DartPad online
  */
 export default function DartRunner({ code, autoRunKey }) {
-  const [output, setOutput] = useState(null);   // null = belum dijalankan
+  const [output, setOutput] = useState(null);
   const [running, setRunning] = useState(false);
   const [compileError, setCompileError] = useState(null);
+  const [dartpadReady, setDartpadReady] = useState(false);
   const iframeRef = useRef(null);
   const runIdRef = useRef(0);
+  const timeoutRef = useRef(null);
 
-  // Tangkap postMessage dari sandboxed iframe
+  // Bersihkan timeout saat unmount
+  useEffect(() => () => clearTimeout(timeoutRef.current), []);
+
+  // Dengarkan pesan dari DartPad iframe
   useEffect(() => {
     function onMessage(e) {
-      const d = e.data;
-      if (!d || d._dartRunnerId !== runIdRef.current) return;
+      if (!e.origin?.includes('dartpad.dev') && e.origin !== window.location.origin) return;
 
-      if (d.type === 'dart-ok') {
-        setOutput(d.output ?? '(tidak ada output)');
+      const d = e.data;
+      if (!d) return;
+
+      // DartPad siap menerima perintah
+      if (d.type === 'ready') {
+        setDartpadReady(true);
+      }
+
+      // Hasil eksekusi
+      if (d.type === 'execution-output' || d.type === 'stdout') {
+        clearTimeout(timeoutRef.current);
+        const text = d.stdout ?? d.output ?? '';
+        setOutput((prev) => (prev === null ? text : prev + text));
         setRunning(false);
-        setCompileError(null);
-      } else if (d.type === 'dart-error') {
-        setCompileError(d.message);
+      }
+
+      if (d.type === 'execution-error' || d.type === 'stderr') {
+        clearTimeout(timeoutRef.current);
+        setCompileError(d.stderr ?? d.error ?? 'Runtime error');
         setRunning(false);
       }
     }
+
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
-  // Auto-run ketika kode berubah (dipicu dari luar via key)
+  // Auto-run ketika kode baru disimpan
   useEffect(() => {
     if (autoRunKey != null && autoRunKey > 0) {
       runCode();
@@ -49,178 +68,144 @@ export default function DartRunner({ code, autoRunKey }) {
   const runCode = useCallback(async () => {
     if (!code?.trim() || running) return;
 
-    const runId = ++runIdRef.current;
+    runIdRef.current++;
     setRunning(true);
     setOutput(null);
     setCompileError(null);
 
-    try {
-      const res = await fetch('/api/run-dart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-
-      let result;
+    // Kirim kode ke DartPad embed via postMessage
+    if (iframeRef.current?.contentWindow) {
       try {
-        result = await res.json();
+        iframeRef.current.contentWindow.postMessage(
+          { type: 'sourceCode', sourceCode: code },
+          'https://dartpad.dev'
+        );
+
+        // Timeout 20 detik
+        timeoutRef.current = setTimeout(() => {
+          setRunning(false);
+          setCompileError('Timeout — DartPad tidak merespons. Coba lagi atau buka di DartPad langsung.');
+        }, 20000);
       } catch {
-        setCompileError('Server mengembalikan respons tidak valid. Coba lagi.');
+        // Fallback jika postMessage gagal
         setRunning(false);
-        return;
+        setOutput(null);
       }
-
-      const { compiledJs, error } = result;
-
-      if (error) {
-        setCompileError(error);
-        setRunning(false);
-        return;
-      }
-
-      // Buat sandboxed HTML yang:
-      // 1. Meng-intercept dartPrint (hook dari dart2js)
-      // 2. Meng-intercept console.log (fallback dart2js)
-      // 3. Mengirim output ke parent via postMessage setelah eksekusi
-      const html = `<!DOCTYPE html><html><head><script>
-var _id=${runId};
-var _out=[];
-// dart2js memanggil dartPrint jika didefinisikan
-var dartPrint=function(s){_out.push(String(s))};
-// Fallback: intercept console.log
-var _origLog=console.log;
-console.log=function(){
-  var s=Array.prototype.slice.call(arguments).join(' ');
-  if(typeof s==='string')_out.push(s);
-  _origLog.apply(console,arguments);
-};
-window.onerror=function(msg,src,line,col,err){
-  parent.postMessage({_dartRunnerId:_id,type:'dart-error',message:err?err.message:msg},'*');
-  return true;
-};
-<\/script></head><body><script>
-(function(){
-try{
-${compiledJs}
-}catch(e){
-  parent.postMessage({_dartRunnerId:_id,type:'dart-error',message:e.message},'*');
-  return;
-}
-setTimeout(function(){
-  parent.postMessage({_dartRunnerId:_id,type:'dart-ok',output:_out.join('\\n')},'*');
-},400);
-})();
-<\/script></body></html>`;
-
+    } else {
+      // Iframe belum siap — reload
       if (iframeRef.current) {
-        const blob = new Blob([html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        iframeRef.current.src = url;
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        iframeRef.current.src = getDartpadUrl();
+        setTimeout(() => setRunning(false), 2000);
       }
-    } catch (err) {
-      setCompileError('Network error: ' + err.message);
-      setRunning(false);
     }
   }, [code, running]);
 
+  function getDartpadUrl() {
+    return 'https://dartpad.dev/embed-dart.html?theme=dark&split=0&run=false';
+  }
+
+  // Buka DartPad di tab baru dengan kode
+  function openInDartpad() {
+    const encoded = encodeURIComponent(code ?? '');
+    // DartPad new embed URL
+    const url = `https://dartpad.dev/?theme=dark&source=${encoded}`;
+    window.open(url, '_blank', 'noopener');
+  }
+
   return (
     <div>
-      {/* Hidden iframe sandbox */}
+      {/* DartPad iframe tersembunyi */}
       <iframe
         ref={iframeRef}
-        sandbox="allow-scripts"
+        src={getDartpadUrl()}
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         style={{ display: 'none', width: 0, height: 0, border: 'none' }}
-        title="dart-sandbox"
+        title="dartpad-runner"
+        onLoad={() => {
+          // Setelah iframe load, inject kode
+          setTimeout(() => {
+            if (iframeRef.current?.contentWindow) {
+              iframeRef.current.contentWindow.postMessage(
+                { type: 'sourceCode', sourceCode: code },
+                'https://dartpad.dev'
+              );
+            }
+          }, 500);
+        }}
       />
 
       {/* Output panel */}
-      <div
-        style={{
-          background: '#070d14',
-          borderTop: '1px solid rgba(255,255,255,0.05)',
-          borderRadius: '0 0 12px 12px',
-        }}
-      >
+      <div style={{ background: '#070d14', borderTop: '1px solid rgba(255,255,255,0.05)', borderRadius: '0 0 12px 12px' }}>
         {/* Toolbar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '8px 16px',
-            borderBottom: output !== null || compileError ? '1px solid rgba(255,255,255,0.05)' : 'none',
-          }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
               Output
             </span>
-            {running && (
-              <span style={{ fontSize: 11, color: '#fbbf24', animation: 'pulse 1s infinite' }}>
-                ⏳ Kompilasi &amp; menjalankan...
-              </span>
-            )}
-            {output !== null && !running && !compileError && (
-              <span style={{ fontSize: 11, color: '#34d399' }}>✓ Sukses</span>
-            )}
-            {compileError && !running && (
-              <span style={{ fontSize: 11, color: '#f87171' }}>✗ Error</span>
-            )}
+            {running && <span style={{ fontSize: 11, color: '#fbbf24' }}>⏳ Menjalankan...</span>}
+            {output !== null && !running && !compileError && <span style={{ fontSize: 11, color: '#34d399' }}>✓ Sukses</span>}
+            {compileError && !running && <span style={{ fontSize: 11, color: '#f87171' }}>✗ Error</span>}
           </div>
-          <button
-            onClick={runCode}
-            disabled={running}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '5px 12px',
-              borderRadius: 6,
-              background: running ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)',
-              border: `1px solid ${running ? 'rgba(16,185,129,0.2)' : 'rgba(16,185,129,0.35)'}`,
-              color: running ? 'rgba(52,211,153,0.5)' : '#34d399',
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: running ? 'not-allowed' : 'pointer',
-              touchAction: 'manipulation',
-              transition: 'all 0.15s ease',
-              userSelect: 'none',
-            }}
-          >
-            {running ? '⏳' : '▶'} {running ? 'Menjalankan...' : 'Jalankan Kode'}
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {/* Buka di DartPad */}
+            <button
+              onClick={openInDartpad}
+              title="Buka di DartPad online"
+              style={{
+                padding: '5px 10px',
+                borderRadius: 6,
+                background: 'rgba(99,102,241,0.12)',
+                border: '1px solid rgba(99,102,241,0.25)',
+                color: '#a5b4fc',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+                touchAction: 'manipulation',
+              }}
+            >
+              🔗 DartPad
+            </button>
+            {/* Jalankan */}
+            <button
+              onClick={runCode}
+              disabled={running}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '5px 12px',
+                borderRadius: 6,
+                background: running ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.15)',
+                border: `1px solid ${running ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.35)'}`,
+                color: running ? 'rgba(52,211,153,0.4)' : '#34d399',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: running ? 'not-allowed' : 'pointer',
+                touchAction: 'manipulation',
+              }}
+            >
+              {running ? '⏳' : '▶'} {running ? 'Menjalankan...' : 'Jalankan'}
+            </button>
+          </div>
         </div>
 
         {/* Output content */}
         {(output !== null || compileError) && (
-          <div style={{ padding: '12px 16px' }}>
+          <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
             {compileError ? (
-              <pre
-                style={{
-                  fontFamily: "'JetBrains Mono', Consolas, monospace",
-                  fontSize: 12,
-                  color: '#fca5a5',
-                  lineHeight: 1.7,
-                  margin: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                ⚠️ {compileError}
-              </pre>
+              <div>
+                <pre style={{ fontFamily: "'JetBrains Mono',Consolas,monospace", fontSize: 12, color: '#fca5a5', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  ⚠️ {compileError}
+                </pre>
+                <button
+                  onClick={openInDartpad}
+                  style={{ marginTop: 8, padding: '5px 12px', borderRadius: 6, background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  🔗 Buka di DartPad untuk debug
+                </button>
+              </div>
             ) : (
-              <pre
-                style={{
-                  fontFamily: "'JetBrains Mono', Consolas, monospace",
-                  fontSize: 13,
-                  color: '#6ee7b7',
-                  lineHeight: 1.9,
-                  margin: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
+              <pre style={{ fontFamily: "'JetBrains Mono',Consolas,monospace", fontSize: 13, color: '#6ee7b7', lineHeight: 1.9, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {output}
               </pre>
             )}
@@ -228,8 +213,8 @@ setTimeout(function(){
         )}
 
         {output === null && !compileError && !running && (
-          <div style={{ padding: '10px 16px', fontSize: 11, color: 'var(--text-muted)' }}>
-            Klik <strong>▶ Jalankan Kode</strong> untuk melihat output — atau simpan kode untuk auto-run.
+          <div style={{ padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)' }}>
+            Klik <strong style={{ color: '#34d399' }}>▶ Jalankan</strong> — atau <strong style={{ color: '#a5b4fc', cursor: 'pointer' }} onClick={openInDartpad}>🔗 buka di DartPad</strong> untuk output interaktif.
           </div>
         )}
       </div>
