@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { subscribeMateri, saveField, DEFAULT_CONTENT } from '../lib/contentStore';
 import { InlineEditText, InlineEditCode } from './InlineEditor';
 
